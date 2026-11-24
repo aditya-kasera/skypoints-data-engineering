@@ -49,11 +49,11 @@ Age uses birthday-aware calculation. For a February 29 DOB in a non-leap year, t
 
 The PDF example is stored only in `tests/fixtures/redemptions_assessment_example.json` as an illustrative test fixture. It is not a supplied production feed. No complete partner or status domain is assumed; non-positive integer miles are retained with a warning pending reversal/zero-value rules. An optional `member_key_mapping` must be supplied explicitly to map redemption member IDs to confirmed profile keys. Without a match, transactions remain queryable with an unmatched-reference warning. The local files' IDs do not establish a join to the illustrative ID `223457`.
 
-The local DuckDB runner and Snowflake SQL deliverables are not implemented yet.
+The DuckDB persistence module provides run lifecycle, member-result persistence, and redemption-result persistence APIs, in addition to schema initialization and connection lifecycle helpers. It does not yet provide a runner/CLI. Snowflake SQL deliverables are planned separately.
 
 ## Execution and testing
 
-No DuckDB runner or full assessment pipeline is implemented yet. Run the tests with:
+No full assessment pipeline or CLI is implemented yet. Run the tests with:
 
 ```bash
 python -m pytest
@@ -70,5 +70,64 @@ src/skypoints_data_engineering/   Installable Python package
 tests/                            Automated tests
 tests/fixtures/                   Clearly labelled illustrative/synthetic test inputs
 ```
+
+To initialize the local DuckDB schema and persist one processed member artifact:
+
+```python
+from datetime import date
+
+from skypoints_data_engineering.ingestion import ingest_source_file
+from skypoints_data_engineering.persistence import (
+    create_pipeline_run,
+    finish_pipeline_run,
+    initialize_schema,
+    open_database,
+    persist_member_results,
+)
+from skypoints_data_engineering.transforms import transform_batch
+from skypoints_data_engineering.validation import validate_batch
+
+with open_database("skypoints.duckdb") as connection:
+    initialize_schema(connection)
+    as_of_date = date(2026, 11, 24)  # Supply the assessment run's explicit reference date.
+    batch = ingest_source_file("data/raw/IND.csv")
+    validation = validate_batch(batch, as_of_date=as_of_date)
+    transformation = transform_batch(validation, as_of_date=as_of_date)
+    create_pipeline_run(connection, "demo-run-001", as_of_date=as_of_date)
+    persist_member_results(
+        connection, "demo-run-001", batch, validation, transformation,
+    )
+    finish_pipeline_run(connection, "demo-run-001", status="succeeded")
+```
+
+`open_database` closes connections it opens from a path; when given an existing
+DuckDB connection, its caller retains ownership. Schema initialization is
+transactional and idempotent for this schema version; it does not migrate older
+schemas. Each artifact persistence call is transactional and idempotent for a
+complete successful retry of the same run/artifact. Before returning from a
+succeeded-input retry, persistence checks raw locators, outcomes, issues, and
+database-derived reconciliation; missing or inconsistent state raises
+`PersistenceIntegrityError`. A failed persistence transaction is rolled back
+and its run-input failure status is recorded for retry. Intentional
+reprocessing uses a new run ID. Redemption
+payloads are hashed from exact `source_bytes` when supplied; in-memory-only
+payloads use a deterministic recursive type-tagged representation. Mapping key
+order does not affect identity; nested `None`, booleans, integers, finite
+floats, strings, bytes, dates, datetimes, mappings, lists, and tuples retain
+distinct type tags. Exact text inputs are UTF-8 text identities and bytes inputs
+are raw-byte identities, so equal-looking text and bytes intentionally hash
+differently. Unsupported objects, cyclic containers, and non-finite floats
+raise an explicit error instead of being coerced. When mapping payloads are
+stored, `raw_payload_json` uses a versioned `typed-json-v1` envelope so nested
+Python date/time and byte values remain distinguishable. These canonical hashes
+are not source-file byte hashes; only caller-supplied `source_bytes` provide
+that evidence. Member references
+are stored only when an explicit matched-key-to-persisted-record mapping is
+provided. These APIs do not yet orchestrate a complete run or automatically
+persist all three sources. `register_input_artifact` is available for explicit
+pending input registration; member and redemption persistence calls register
+their own artifacts and mark inputs succeeded only after the artifact
+transaction commits. A run cannot be marked succeeded while a registered input
+remains pending, running, or failed.
 
 The assessment PDF and operating-system metadata are kept out of Git. Raw CSV and Excel inputs are preserved as supplied.

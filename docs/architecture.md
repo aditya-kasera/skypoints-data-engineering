@@ -37,7 +37,7 @@ flowchart LR
   end
 ```
 
-Local responsibilities: pandas/openpyxl read the three source formats without changing them; source adapters map fields and retain raw values; validation returns provenance-linked outcomes; transformations derive age/staleness and apply the isolated filename sample router; DuckDB will later run/persist the demonstration; pytest exercises results. The PDF JSON is a test fixture, not an actual raw input.
+Local responsibilities: pandas/openpyxl read the three source formats without changing them; source adapters retain raw values; validation returns provenance-linked outcomes; transformations derive age/staleness and apply the isolated filename sample router; the DuckDB persistence module stores run/artifact lineage, raw member and redemption inputs, per-run outcomes/issues, reconciliation, and curated views; pytest exercises results. There is not yet a CLI that orchestrates the complete run. The PDF JSON is a test fixture, not an actual raw input.
 
 Production responsibilities: object storage holds immutable delivered files; Snowflake stages and bulk-loads the described delimited member and JSON feeds; raw tables retain landed values and metadata; SQL staging validates and standardizes; a central canonical table is the source of truth once identity and order fields exist; physical country target tables satisfy the DDL deliverable; JSON `VARIANT` is flattened into one row per transaction.
 
@@ -169,7 +169,7 @@ Redemption tests: PDF-only labeled JSON fixture, multiple transaction flattening
 
 ## 14. Engineering and demonstration
 
-Implement small source adapters, validation/transformation modules, a DuckDB runner, and focused tests only as needed. The current transformations return in-memory rows and retain the original validation result; quarantined rows remain traceable but do not enter curated output. A later local command will accept explicit input and `as_of_date` parameters and write an ignored local DuckDB output. README instructions will cover setup, run, and tests.
+Implement small source adapters, validation/transformation modules, DuckDB persistence, a local runner, and focused tests only as needed. The persistence APIs now accept the existing in-memory pipeline results and write each artifact atomically; transformations continue to return in-memory rows and retain the original validation result, while quarantined rows remain traceable but do not enter curated output. A later local command will orchestrate active inputs with an explicit `as_of_date` and write an ignored local DuckDB output. README instructions will cover setup, run, and tests.
 
 Keep `AGENTS.md` as the persistent engineering constitution and update `AI_USAGE.md` with AI roles, prompts/approaches, human-reviewed decisions, findings/corrections, and actual verification. Use incremental, reviewable commits in the later implementation phase; do not commit or push without explicit approval. Public submission must exclude `reference/assessment.pdf`. The PDF requires a live demonstration but does not require production cloud deployment.
 
