@@ -49,11 +49,60 @@ Age uses birthday-aware calculation. For a February 29 DOB in a non-leap year, t
 
 The PDF example is stored only in `tests/fixtures/redemptions_assessment_example.json` as an illustrative test fixture. It is not a supplied production feed. No complete partner or status domain is assumed; non-positive integer miles are retained with a warning pending reversal/zero-value rules. An optional `member_key_mapping` must be supplied explicitly to map redemption member IDs to confirmed profile keys. Without a match, transactions remain queryable with an unmatched-reference warning. The local files' IDs do not establish a join to the illustrative ID `223457`.
 
-The DuckDB persistence module provides run lifecycle, member-result persistence, and redemption-result persistence APIs, in addition to schema initialization and connection lifecycle helpers. It does not yet provide a runner/CLI. Snowflake SQL deliverables are planned separately.
+The package provides a local end-to-end runner over the in-memory processing modules and DuckDB persistence APIs. It executes the three supplied member adapters and the clearly illustrative assessment redemption fixture. Snowflake SQL deliverables are planned separately.
 
 ## Execution and testing
 
-No full assessment pipeline or CLI is implemented yet. Run the tests with:
+Run the local demonstration from the repository root with an explicit business reference date:
+
+```bash
+python -m skypoints_data_engineering run-demo --as-of-date 2024-01-15
+```
+
+The default database is `build/skypoints.duckdb`. Override the database, member input directory, or illustrative fixture with `--database`, `--data-dir`, and `--redemption-fixture`. Each invocation receives a new execution `run_id`, while identical source content retains the same artifact identity. Operational ingestion timestamps are generated in UTC; `as_of_date` is always provided by the caller. A failed run is marked failed and exits non-zero.
+
+The command reports counts read from DuckDB: artifact identities and source record counts, member dispositions and country views, redemption parent/transaction dispositions, unmatched transactions, raw/curated persistence totals, and reconciliation status. Reconciliation is checked against actual persisted rows before the run is marked successful. A representative output shape is:
+
+```text
+Run: demo-<execution-id> (succeeded)
+As of: 2024-01-15
+Input artifacts:
+  member: AUS.xlsx artifact=<artifact-id> records=3
+  member: IND.csv artifact=<artifact-id> records=3
+  member: USA.csv artifact=<artifact-id> records=3
+  redemption: redemptions_assessment_example.json artifact=<artifact-id> records=1
+Members accepted/warned/quarantined: 6/1/2
+Country curated: AUS=2, IND=3, USA=2
+Redemption parents accepted/warned/quarantined/total: 1/0/0/1
+Transactions accepted/warned/quarantined/unmatched/total: 0/2/0/2/2
+Persisted raw members/curated members/raw parents/raw transactions/curated transactions: 9/7/1/2/2
+Reconciliation: OK
+Database: <database-path>
+```
+
+The fixture's redemption rows are unmatched warnings because the illustrative `member_id` has no confirmed mapping to supplied profiles. Quarantined members remain in raw and outcome tables but are excluded from country views. Warnings remain queryable and are not silently dropped.
+
+Inspect the current run using its printed ID:
+
+```sql
+SELECT member_name, source_member_id, age, stale_member, routed_country_code
+FROM members_aus
+WHERE run_id = '<printed-run-id>';
+
+SELECT member_id, txn_id, parsed_transaction_date, partner, miles_redeemed,
+       status, matched_member_run_id, matched_member_raw_record_id
+FROM curated_redemptions
+WHERE run_id = '<printed-run-id>';
+
+SELECT scope, read_count, accepted_count, warned_count, quarantined_count,
+       transformed_count, unmatched_count, raw_persisted_count, curated_persisted_count
+FROM run_reconciliation
+WHERE run_id = '<printed-run-id>';
+```
+
+Known limitations: the supplied datasets have source-local IDs but no confirmed global member identity or business update/effective timestamp. The demo does not perform latest-record-wins or prove country movement. Filename routing is sample-only. Its few records do not establish production throughput. The existing persistence retry guard verifies raw/outcome locators, member issue contents, redemption issue counts, and reconciliation counts. It does not compare every persisted raw, outcome, or redemption issue value with its expected source value, so content-level tampering with intact keys remains a known persistence limitation. Each runner invocation gets a new run ID and preserves separate history; it does not repair a prior run.
+
+Run the tests with:
 
 ```bash
 python -m pytest
@@ -105,8 +154,8 @@ DuckDB connection, its caller retains ownership. Schema initialization is
 transactional and idempotent for this schema version; it does not migrate older
 schemas. Each artifact persistence call is transactional and idempotent for a
 complete successful retry of the same run/artifact. Before returning from a
-succeeded-input retry, persistence checks raw locators, outcomes, issues, and
-database-derived reconciliation; missing or inconsistent state raises
+succeeded-input retry, persistence checks raw/outcome locators, member issue
+contents, redemption issue counts, and database-derived reconciliation; missing or inconsistent state raises
 `PersistenceIntegrityError`. A failed persistence transaction is rolled back
 and its run-input failure status is recorded for retry. Intentional
 reprocessing uses a new run ID. Redemption

@@ -37,7 +37,7 @@ flowchart LR
   end
 ```
 
-Local responsibilities: pandas/openpyxl read the three source formats without changing them; source adapters retain raw values; validation returns provenance-linked outcomes; transformations derive age/staleness and apply the isolated filename sample router; the DuckDB persistence module stores run/artifact lineage, raw member and redemption inputs, per-run outcomes/issues, reconciliation, and curated views; pytest exercises results. There is not yet a CLI that orchestrates the complete run. The PDF JSON is a test fixture, not an actual raw input.
+Local responsibilities: pandas/openpyxl read the three source formats without changing them; source adapters retain raw values; validation returns provenance-linked outcomes; transformations derive age/staleness and apply the isolated filename sample router; the DuckDB persistence module stores run/artifact lineage, raw member and redemption inputs, per-run outcomes/issues, reconciliation, and curated views; the `python -m skypoints_data_engineering run-demo` CLI orchestrates one complete local demonstration; pytest exercises results. The PDF JSON is a test fixture, not an actual raw input.
 
 Production responsibilities: object storage holds immutable delivered files; Snowflake stages and bulk-loads the described delimited member and JSON feeds; raw tables retain landed values and metadata; SQL staging validates and standardizes; a central canonical table is the source of truth once identity and order fields exist; physical country target tables satisfy the DDL deliverable; JSON `VARIANT` is flattened into one row per transaction.
 
