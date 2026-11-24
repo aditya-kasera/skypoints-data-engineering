@@ -4,7 +4,7 @@
 
 Profiled the three supplied files with read-only pandas/openpyxl inspection: `data/raw/AUS.xlsx`, `data/raw/IND.csv`, and `data/raw/USA.csv`. Original files were not changed. Counts below describe data records, excluding headers.
 
-The original assessment specification is not available in this checkout or its reachable Git history. The prior assessment PDF is not present under the repository, and the initial commit does not contain it. Therefore this report cannot make a factual comparison against the PDF's requirements; see the unresolved questions below.
+The authoritative assessment PDF is available locally at `reference/assessment.pdf` and is ignored by Git. It is reference-only and must not be included in the public repository. The comparison below is updated against that PDF; the active input inventory remains exactly these three distinct files: `AUS.xlsx`, `IND.csv`, and `USA.csv`.
 
 ## Facts observed in the files
 
@@ -42,7 +42,15 @@ There are 9 data rows in total. No blank CSV fields were observed. In the workbo
 
 ## Assessment specification comparison
 
-The assessment PDF is absent from the current worktree and Git history, so its requested fields, rules, and expected outputs cannot be checked against these files. The observable source-level differences that need reconciliation with the specification are: different headers and date encodings; USA's missing DOB and member-type columns; AUS's `NULL` DOB and invalid enrollment value; repeated source-local IDs; and country inferred only from filenames. No claim is made that these are deviations from the assessment requirements until the specification is available.
+The assessment PDF specifies an illustrative pipe-delimited member feed and nested JSON feed. The actual inputs profiled here are one Excel workbook and two CSVs; no JSON file is present. The source rows therefore require format-specific adapters and are not evidence that the illustrated flat-file contract has been delivered.
+
+The PDF field table lists Member Name as mandatory and a key, and Member ID as mandatory but not a key, with length 18. Its examples contain shorter member IDs, so 18 is treated as a maximum length, not an exact count. The PDF's file-name/date-time design prompt (`YYYYMMDD`, `HHMMSSTT` or another format) is not a supplied source contract; `TT` and timezone are undefined.
+
+Other discrepancies visible in the PDF are: Post Code appears in the field table but not in its illustrative header/detail or intermediate layout; the active field is named `Is_Active`, `Active Member`, and `FLAG` in different layouts; the intermediate table says `County` where the header says `Country`; and the intermediate DOB drops the leading zero from the detail value `03051985`. These are recorded without silently normalizing source content.
+
+The PDF's illustrative flat-file Elena and JSON parent both use ID `223457`, while all three active local sources use local IDs `1`, `2`, and `3`. Those values repeat across files, and there is no source-supplied global identity or member update timestamp. The local PDF JSON example is illustrative only and does not join to the current data files.
+
+Country is absent from each active row schema. Local country routing by `AUS.xlsx`, `IND.csv`, and `USA.csv` is a documented demo-only adapter with provenance, not verified member-country truth. Production routing requires the assessment row-level Country field or an approved mapping. Duplicate Member Name checks are scoped to a source-country dataset/batch; the PDF does not define that key scope, and names are never used to merge people across countries.
 
 ## Canonical schema proposal
 
@@ -54,7 +62,7 @@ The following is a proposal for review, not an approved contract. It represents 
 | `source_file` | string | Required exact input filename. |
 | `source_sheet` | string | Nullable; `Sheet1` for AUS, null for CSV files. |
 | `source_row_number` | integer | Required source data row position for traceability; header excluded. Not a member ID. |
-| `source_member_id_raw` | string | Required source-local ID as represented in the source. Do not treat it as globally unique. |
+| `source_member_id_raw` | string | Required source-local ID as represented in the source. Do not treat it as globally unique or as a confirmed `global_member_id`. |
 | `member_name_raw` | string | Required as observed; retain spelling and whitespace pending approved standardization rules. |
 | `tier_code_raw` | string | Required as observed. Do not map tier semantics or ordering without a supplied definition. |
 | `date_of_birth_raw` | string | Nullable; retain the literal `NULL` and source formatting. Null in USA because the column is absent. |
@@ -76,17 +84,20 @@ These are recommendations only; they have not been approved as business rules.
 
 ## Assumptions
 
-- The `AUS`, `IND`, and `USA` filename prefixes identify source feeds; they do not, by themselves, prove the member's country.
+- The `AUS`, `IND`, and `USA` filenames are used for explicit local demonstration routing only; they do not, by themselves, prove member country.
 - Slash-separated IND dates appear to use month/day/year, and the USA compact numbers appear intended to encode month/day/year. USA's two 7-digit values remain ambiguous even under this likely interpretation.
 - The numeric IDs are local to each source because all three feeds independently use `1`–`3`; confirm before defining source-key constraints.
+- The AUS workbook's displayed date format suggests `YYYY-MM-DD` for textual fallback, while native Excel date cells remain the primary representation. The fallback is an adapter assumption.
+- The assessment PDF's example suggests `YYYYMMDD` for enrollment/flight and `MMDDYYYY` for DOB, but it does not define these as source contracts. The file-time token `TT` and timezone remain unresolved.
 
 ## Unresolved business questions
 
-1. Can the assessment PDF/specification be supplied so its required source fields, target outputs, and business rules can be compared accurately?
-2. Are IDs source-local, and is there any approved cross-source identity key or matching policy?
-3. What is the authoritative USA date format, especially for `1052022` and `1152022`? Should invalid and ambiguous dates reject a record, quarantine it, or remain nullable with an issue report?
-4. What are the meanings and valid ordering/mappings of `PLT`, `GLD`, and `SLV`?
-5. What do IND's `I` and `C` mean, and should both be represented as members?
-6. Are the filename prefixes authoritative country/source codes, and should canonical country be present?
-7. Is each flight date a flight event, a latest-flight attribute, or something else? Can there be multiple flights per member, and is an event identifier available?
-8. Is `NULL` the only missing-value token, and are any source-specific name or date normalization rules required?
+1. Does Member Name uniqueness apply per source-country dataset/batch, per country target, or across a complete flat-file feed? Until confirmed, report duplicates only in the documented scope and never merge by name.
+2. Are IDs source-local, and is there an approved cross-source identity key or matching policy? What business update/effective timestamp orders member changes?
+3. What is the authoritative USA date format, especially for `1052022` and `1152022`? Should unresolved mandatory values be quarantined and optional values remain null with an issue?
+4. What do `TT` and the time portion of the filename represent, and what timezone applies to source-generated timestamps?
+5. What are the meanings and valid mappings/order of `PLT`, `GLD`, and `SLV`?
+6. What do IND's `I` and `C` mean, and should both be represented as members?
+7. Are filename prefixes authoritative only for feed routing, and what country-code aliases are approved for production?
+8. Is each flight date a member profile's last flight or a flight event? Can a member have multiple flights, and is an event identifier available?
+9. Is `NULL` the only missing-value token, and are any approved name/date normalization rules required?
