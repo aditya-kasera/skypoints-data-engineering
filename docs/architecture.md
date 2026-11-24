@@ -132,7 +132,9 @@ Physical tables satisfy the assessment deliverable. Country-filtered views over 
 
 ## 9. Redemption pipeline
 
-Land full payloads and file/batch metadata in raw JSON (`VARIANT` in Snowflake). Flatten each `redemptions` element to one row with parent `member_id`, `feed_date`, transaction ID/date, partner, miles, status, and source provenance. Validate parse shape and field types; flag duplicates/invalid dates/unrecognized statuses and preserve raw payload. Join to member profile only through a confirmed shared global ID. The PDF fixture can demonstrate the two example transactions and their match to its illustrative member 223457; current CSV/XLSX rows cannot be joined to that ID. Keep unmatched transactions queryable with an issue status.
+Land full payloads and file/batch metadata in raw JSON (`VARIANT` in Snowflake). The local `redemptions.py` accepts one JSON payload or an ordered sequence and emits one outcome for each array element, retaining parent `member_id`/`feed_date`, transaction fields, parsed dates, raw parent/child values, and payload/child provenance. Parent and malformed child payloads remain represented with structured issues; duplicate transaction IDs are quarantined within one processing call. The `YYYYMMDD` dates and required fields are based on the illustrative JSON shape, not a separately supplied production contract. Do not invent complete partner/status domains; preserve values, and flag non-positive integer miles as a warning pending reversal/zero-value rules.
+
+The JSON example is stored only in `tests/fixtures/redemptions_assessment_example.json`, labelled as an illustrative assessment fixture, and is not an actual production feed. A join is performed only through an explicitly supplied confirmed mapping from redemption `member_id` to profile key. Without a match, keep the transaction and issue an unmatched-reference warning. Current CSV/XLSX source-local IDs 1–3 do not match the illustrative ID 223457; any successful join test uses a separate, explicitly synthetic mapping and is not source evidence.
 
 ## 10. Incremental processing and idempotency
 

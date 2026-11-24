@@ -27,6 +27,13 @@ def parse_source_date(value: object, date_format: str) -> tuple[date | None, str
             return date.fromisoformat(text), "valid"
         except ValueError:
             return None, "invalid"
+    if date_format == "basic_iso":
+        if not re.fullmatch(r"\d{8}", text):
+            return None, "invalid"
+        try:
+            return date(int(text[:4]), int(text[4:6]), int(text[6:8])), "valid"
+        except ValueError:
+            return None, "invalid"
     if date_format == "slash":
         try:
             return datetime.strptime(text, "%m/%d/%Y").date(), "valid"

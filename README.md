@@ -43,7 +43,13 @@ The staged filename is metadata only; the original source files are not renamed 
 
 Age uses birthday-aware calculation. For a February 29 DOB in a non-leap year, this implementation uses March 1 as the birthday; this is a documented implementation assumption, not an assessment rule. Missing or invalid DOB yields no age. `stale_member` is true only when the last flight was more than 90 days before `as_of_date`; exactly 90 days is false. Missing, invalid, or future flight dates yield no stale flag. The same explicit `as_of_date` must be used for validation and transformation; no system clock is consulted.
 
-The local DuckDB runner, redemption processing, and Snowflake SQL deliverables are not implemented yet.
+## Redemption JSON
+
+`process_redemption_payloads(...)` accepts one JSON string/bytes/object or an ordered sequence of them and flattens every `redemptions` array element into a transaction outcome. It retains parent member/feed fields, parsed dates where valid, the raw parent and child values, and payload/transaction provenance. Malformed parent payloads and child objects remain in the result with structured issues and quarantined dispositions; duplicate transaction IDs are quarantined within one processing call.
+
+The PDF example is stored only in `tests/fixtures/redemptions_assessment_example.json` as an illustrative test fixture. It is not a supplied production feed. No complete partner or status domain is assumed; non-positive integer miles are retained with a warning pending reversal/zero-value rules. An optional `member_key_mapping` must be supplied explicitly to map redemption member IDs to confirmed profile keys. Without a match, transactions remain queryable with an unmatched-reference warning. The local files' IDs do not establish a join to the illustrative ID `223457`.
+
+The local DuckDB runner and Snowflake SQL deliverables are not implemented yet.
 
 ## Execution and testing
 
@@ -62,6 +68,7 @@ data/raw/                         Supplied CSV and Excel source files
 sql/                              Reserved for Snowflake SQL deliverables
 src/skypoints_data_engineering/   Installable Python package
 tests/                            Automated tests
+tests/fixtures/                   Clearly labelled illustrative/synthetic test inputs
 ```
 
 The assessment PDF and operating-system metadata are kept out of Git. Raw CSV and Excel inputs are preserved as supplied.
