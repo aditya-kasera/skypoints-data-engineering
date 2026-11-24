@@ -37,7 +37,7 @@ flowchart LR
   end
 ```
 
-Local responsibilities: pandas/openpyxl read the three source formats without changing them; source adapters map fields and retain raw values; DuckDB runs typed transformations and produces local tables; pytest exercises results. The PDF JSON is a test fixture, not an actual raw input.
+Local responsibilities: pandas/openpyxl read the three source formats without changing them; source adapters map fields and retain raw values; validation returns provenance-linked outcomes; transformations derive age/staleness and apply the isolated filename sample router; DuckDB will later run/persist the demonstration; pytest exercises results. The PDF JSON is a test fixture, not an actual raw input.
 
 Production responsibilities: object storage holds immutable delivered files; Snowflake stages and bulk-loads the described delimited member and JSON feeds; raw tables retain landed values and metadata; SQL staging validates and standardizes; a central canonical table is the source of truth once identity and order fields exist; physical country target tables satisfy the DDL deliverable; JSON `VARIANT` is flattened into one row per transaction.
 
@@ -69,7 +69,7 @@ Generate `ingested_at_utc` as a timezone-aware UTC operational timestamp and ser
 |---|---|---|
 | `AUS.xlsx` | Native Excel date cells. Text fallback is `YYYY-MM-DD`, based on displayed workbook format. | Treat literal `NULL` as a missing DOB marker. Reject invalid calendar text such as `2021-13-13`; preserve raw value. |
 | `IND.csv` | `M/D/YYYY` (`%m/%d/%Y`). | This parses the observed rows, but locale/format is not declared by the source; record as an adapter assumption. |
-| `USA.csv` | Compact 7- or 8-digit month/day/year candidates, with 1- or 2-digit month, 2-digit day, and 4-digit year. | Enumerate calendar-valid splits and accept only a unique parse. `1052022` and `1152022` remain ambiguous and unparsed. |
+| `USA.csv` | Compact 7- or 8-digit month/day/year candidates with a four-digit year. Seven-digit values allow 1- or 2-digit month and day widths (the widths sum to 3); eight-digit values use two digits for each. | Enumerate all calendar-valid splits and accept only a unique parse. `1052022` is either `1/05/2022` or `10/5/2022`; `1152022` is either `1/15/2022` or `11/5/2022`. Preserve both raw strings and leave them unparsed. |
 
 These are implementation parse rules, not assertions that the source owner has supplied a formal date contract. The PDF's flat-file examples suggest `YYYYMMDD` for enrollment/flight and `MMDDYYYY` for DOB, but the PDF does not specify these field formats as a contract. Keep that distinction explicit.
 
@@ -102,9 +102,9 @@ For local routing, use explicit mappings `AUS.xlsx → AUS`, `IND.csv → IND`, 
 Required checks:
 
 - PDF-mandatory Member Name, Member ID, and Enrollment Date; Member ID maximum length 18, preserving textual form.
-- Member Name duplicate checks within the documented source-country dataset/batch key scope. Report within-scope anomalies; do not merge by name. A same-name row in another country dataset is not a conflict and must not be globally quarantined. The PDF does not define key scope, so the proposed local scope is one source-country batch pending confirmation.
-- Source-local ID duplicates within each source scope as anomalies; repeated values across sources are expected in the sample and do not imply identity.
-- Calendar validity and explicit parsing per adapter; future DOB is invalid; future enrollment/flight is flagged pending business rules. Missing/invalid optional DOB or flight yields null derived values with a visible issue.
+- Member Name duplicate checks within the documented source-country dataset/batch key scope. Because the PDF declares Member Name as a key, quarantine every record in a duplicate group from curated output while preserving its raw row and provenance. A same-name row in another country dataset is not a conflict and must not be merged or quarantined. The PDF does not define key scope, so one source-country batch is the explicit local assumption pending confirmation.
+- Source-local ID duplicates within each source batch are warnings only because Member ID is not declared a key; repeated values across sources are expected in the sample and do not imply identity.
+- Validate calendar dates using an explicit `as_of_date`, never the system clock: future DOB is quarantined; future enrollment/flight dates are warnings pending source-owner confirmation. Missing/invalid optional DOB or flight yields null derived values with a visible issue.
 - Tier, active, state, country, postcode, transaction, and referential checks. `PLT`, `GLD`, `SLV`, and `A` are observed values, not a complete allowed-code list. The PDF specifies Post Code as integer length 5, but no active source has it; preserve lexical form before conversion to avoid losing leading zeroes.
 - Redemption structure/field presence, transaction date, ID duplicates, status, miles, parent IDs, and unmatched references. The JSON sample shows `COMPLETED` and `PENDING`, not a full status domain. Flag negative/zero miles pending reversal/zero-value rules.
 
@@ -112,9 +112,9 @@ Classify data as valid, warning, or quarantined. Quarantine malformed records an
 
 ## 6. Derived fields
 
-Require explicit `as_of_date` in the local run and tests; do not rely on the machine clock. Calculate age as year difference adjusted when the birthday has not occurred in that year. For Feb. 29 birthdays in non-leap years, use March 1 solely as a documented deterministic implementation assumption, not an assessment rule; confirm with the business owner. Missing/invalid DOB produces null age.
+Require explicit `as_of_date` for validation and transformations; do not rely on the machine clock. A DOB after that date is quarantined. Future enrollment/flight values are warnings pending source-owner confirmation. Calculate age as year difference adjusted when the birthday has not occurred in that year. For Feb. 29 birthdays in non-leap years, use March 1 solely as a documented deterministic implementation assumption, not an assessment rule; confirm with the business owner. Missing/invalid DOB produces null age.
 
-Calculate `Stale_Member` from `days_between(as_of_date, last_flight_date) > 90`. Exactly 90 days is false; 91 is true. Missing/invalid flight date produces null stale status; a future flight raises a data-quality issue and is not treated as stale.
+Calculate `Stale_Member` from `days_between(as_of_date, last_flight_date) > 90`. Exactly 90 days is false; 91 is true. Missing/invalid flight date produces null stale status; a future flight raises the provisional warning and is not treated as stale. The local implementation passes the same explicit `as_of_date` through validation and transformation.
 
 ## 7. Identity and latest-record-wins
 
@@ -126,7 +126,7 @@ Test the algorithm with an explicitly synthetic fixture containing synthetic IDs
 
 ## 8. Country targets
 
-The assessment requires physical country target tables; provide them alongside a central canonical current-member source of truth when global identity is supported. Local DuckDB demonstration tables use only the three explicit filename mappings. Production route selection uses row-level Country or an approved mapping lookup, then a controlled allowlist of country codes/table names. Unknown values are retained and reported, not interpolated into SQL identifiers or assigned by guesswork.
+The assessment requires physical country target tables; provide them alongside a central canonical current-member source of truth when global identity is supported. The local transformation adapter routes only `AUS.xlsx → AUS`, `IND.csv → IND`, and `USA.csv → USA`, and records `FILENAME_SAMPLE_ADAPTER` as routing provenance. An unknown filename is retained as an unrouted curated row with a provenance-linked warning. This sample mechanism does not represent production country routing. Production route selection uses row-level Country or an approved mapping lookup, then a controlled allowlist of country codes/table names. Unknown values are retained and reported, not interpolated into SQL identifiers or assigned by guesswork.
 
 Physical tables satisfy the assessment deliverable. Country-filtered views over the canonical table may be simpler long-term, but do not replace the required tables in the assessment artifacts. For updates/moves, delete the old-country copy and insert the current-country row with the canonical update as one DML unit; deploy DDL separately.
 
@@ -167,14 +167,14 @@ Redemption tests: PDF-only labeled JSON fixture, multiple transaction flattening
 
 ## 14. Engineering and demonstration
 
-Implement small source adapters, validation/transformation modules, a DuckDB runner, and focused tests only as needed. A later local command will accept explicit input and `as_of_date` parameters and write an ignored local DuckDB output. README instructions will cover setup, run, and tests.
+Implement small source adapters, validation/transformation modules, a DuckDB runner, and focused tests only as needed. The current transformations return in-memory rows and retain the original validation result; quarantined rows remain traceable but do not enter curated output. A later local command will accept explicit input and `as_of_date` parameters and write an ignored local DuckDB output. README instructions will cover setup, run, and tests.
 
 Keep `AGENTS.md` as the persistent engineering constitution and update `AI_USAGE.md` with AI roles, prompts/approaches, human-reviewed decisions, findings/corrections, and actual verification. Use incremental, reviewable commits in the later implementation phase; do not commit or push without explicit approval. Public submission must exclude `reference/assessment.pdf`. The PDF requires a live demonstration but does not require production cloud deployment.
 
 ## Open assumptions and questions
 
 - The local filename-to-country mapping is a demo-only assumption; confirm the production Country field and authorized aliases.
-- Confirm Member Name key scope and global identity; until then names are checked only within a source-country dataset/batch, never used for cross-country matching, and same names across countries are not quarantined.
+- Confirm Member Name key scope and global identity. The local assumption is that one validation batch represents one source-country dataset; quarantine every duplicate-name row within that batch because the PDF declares Member Name a key, and do not compare, merge, or quarantine same-name rows across batches.
 - Confirm Member ID scope, source business update/effective timestamp, and sequence for timestamp ties.
 - Confirm the observed date parsing assumptions for AUS text fallback, IND slash dates, and USA compact dates; ambiguous USA values remain unresolved.
 - Confirm Feb. 29 age convention, full tier/active domains, postcode lexical requirements, and redemption transaction ID/status/miles/reversal rules.

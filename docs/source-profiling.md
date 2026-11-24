@@ -30,7 +30,7 @@ There are 9 data rows in total. No blank CSV fields were observed. In the workbo
 
 - **AUS:** Valid date values are stored as Excel datetime cells and displayed in a year-month-day format. DOB for ID 1 is the literal `NULL`. Enrollment for ID 2 is the invalid calendar string `2021-13-13` (month 13, day 13); it cannot be parsed as a date. The other observed DOB, enrollment, and flight values are valid Excel dates.
 - **IND:** DOB, enrollment, and flight fields use slash-separated values consistent with `M/D/YYYY`; all 9 values parse under that interpretation. The file does not declare a locale or format contract, so this is an observed/inferred format, not an authoritative rule.
-- **USA:** All 6 enrollment/flight values are compact digit strings represented as integers, with no separators or zero padding. `6152022`, `8202022`, `12282021`, and `12302021` have a single plausible month/day/year split. `1052022` can be `1/05/2022` or `10/5/2022`; `1152022` can be `1/15/2022` or `11/5/2022`. Interpreting these as January dates would make the member's flight 10 days after enrollment in each row, but that relationship is not specified and must not be used as a business rule. Do not silently select either interpretation.
+- **USA:** All 6 enrollment/flight values are compact digit strings represented as integers, with no separators or zero padding. Candidate dates use a four-digit year; seven-digit values can split into a one-digit month/two-digit day or a two-digit month/one-digit day, while eight-digit values use two-digit month and day. Calendar-valid interpretations are: `6152022` → `6/15/2022` (the `61/5/2022` split is invalid); `8202022` → `8/20/2022` (the `82/0/2022` split is invalid); `12282021` → `12/28/2021`; `12302021` → `12/30/2021`; `1052022` → either `1/05/2022` or `10/5/2022`; and `1152022` → either `1/15/2022` or `11/5/2022`. The last two remain ambiguous and unparsed. Interpreting them as January dates would make the member's flight 10 days after enrollment in each row, but that relationship is not specified and must not be used as a business rule.
 
 ### IDs, identity, categories, and consistency
 
@@ -50,7 +50,7 @@ Other discrepancies visible in the PDF are: Post Code appears in the field table
 
 The PDF's illustrative flat-file Elena and JSON parent both use ID `223457`, while all three active local sources use local IDs `1`, `2`, and `3`. Those values repeat across files, and there is no source-supplied global identity or member update timestamp. The local PDF JSON example is illustrative only and does not join to the current data files.
 
-Country is absent from each active row schema. Local country routing by `AUS.xlsx`, `IND.csv`, and `USA.csv` is a documented demo-only adapter with provenance, not verified member-country truth. Production routing requires the assessment row-level Country field or an approved mapping. Duplicate Member Name checks are scoped to a source-country dataset/batch; the PDF does not define that key scope, and names are never used to merge people across countries.
+Country is absent from each active row schema. Local country routing by `AUS.xlsx`, `IND.csv`, and `USA.csv` is a documented demo-only adapter with provenance, not verified member-country truth. Production routing requires the assessment row-level Country field or an approved mapping. Because the PDF marks Member Name as a key but does not define its scope, the local assumption is that one source-country batch is the uniqueness scope: quarantine all rows in a duplicate-name group within that batch, but do not compare, merge, or quarantine same-name rows across batches.
 
 ## Canonical schema proposal
 
@@ -92,7 +92,7 @@ These are recommendations only; they have not been approved as business rules.
 
 ## Unresolved business questions
 
-1. Does Member Name uniqueness apply per source-country dataset/batch, per country target, or across a complete flat-file feed? Until confirmed, report duplicates only in the documented scope and never merge by name.
+1. Does Member Name uniqueness apply per source-country dataset/batch, per country target, or across a complete flat-file feed? Pending confirmation, the local demo assumes one source-country batch, quarantines every row in a within-batch duplicate-name group, and never compares or merges names across batches.
 2. Are IDs source-local, and is there an approved cross-source identity key or matching policy? What business update/effective timestamp orders member changes?
 3. What is the authoritative USA date format, especially for `1052022` and `1152022`? Should unresolved mandatory values be quarantined and optional values remain null with an issue?
 4. What do `TT` and the time portion of the filename represent, and what timezone applies to source-generated timestamps?
