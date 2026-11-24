@@ -49,7 +49,7 @@ Age uses birthday-aware calculation. For a February 29 DOB in a non-leap year, t
 
 The PDF example is stored only in `tests/fixtures/redemptions_assessment_example.json` as an illustrative test fixture. It is not a supplied production feed. No complete partner or status domain is assumed; non-positive integer miles are retained with a warning pending reversal/zero-value rules. An optional `member_key_mapping` must be supplied explicitly to map redemption member IDs to confirmed profile keys. Without a match, transactions remain queryable with an unmatched-reference warning. The local files' IDs do not establish a join to the illustrative ID `223457`.
 
-The package provides a local end-to-end runner over the in-memory processing modules and DuckDB persistence APIs. It executes the three supplied member adapters and the clearly illustrative assessment redemption fixture. Snowflake SQL deliverables are planned separately.
+The package provides a local end-to-end runner over the in-memory processing modules and DuckDB persistence APIs. It executes the three supplied member adapters and the clearly illustrative assessment redemption fixture. Snowflake SQL deliverables are under `sql/`; see [the SQL execution guide](sql/README.md). They have not been run against a Snowflake account.
 
 ## Execution and testing
 
@@ -114,7 +114,7 @@ GitHub Actions runs the same test command on pushes and pull requests using Pyth
 
 ```text
 data/raw/                         Supplied CSV and Excel source files
-sql/                              Reserved for Snowflake SQL deliverables
+sql/                              Snowflake DDL, transformation SQL, and execution guide
 src/skypoints_data_engineering/   Installable Python package
 tests/                            Automated tests
 tests/fixtures/                   Clearly labelled illustrative/synthetic test inputs

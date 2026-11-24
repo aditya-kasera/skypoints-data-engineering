@@ -1,0 +1,69 @@
+-- SYNTHETIC-ONLY demonstration. None of these IDs, timestamps, or moves come
+-- from supplied AUS.xlsx / IND.csv / USA.csv data. The assessment requires
+-- latest-record-wins, but supplied records lack both global identity and
+-- business recency, so this fixture must not be joined to real outputs.
+USE SCHEMA SKYPOINTS_ASSESSMENT;
+
+CREATE OR REPLACE TEMP TABLE SYNTHETIC_MEMBER_EVENTS (
+    GLOBAL_MEMBER_ID VARCHAR(64),
+    MEMBER_NAME VARCHAR(255),
+    COUNTRY_CODE VARCHAR(3),
+    SOURCE_UPDATED_AT_UTC TIMESTAMP_TZ,
+    SOURCE_SEQUENCE NUMBER(38, 0),
+    ARRIVAL_SEQUENCE NUMBER(38, 0)
+);
+
+INSERT INTO SYNTHETIC_MEMBER_EVENTS VALUES
+    ('SYN-MEMBER-001', 'Synthetic Member', 'AUS', '2024-01-01 10:00:00 +00:00', 1, 1),
+    ('SYN-MEMBER-001', 'Synthetic Member', 'IND', '2023-12-31 10:00:00 +00:00', 2, 2), -- Late arrival, older business time.
+    ('SYN-MEMBER-001', 'Synthetic Member', 'USA', '2024-02-01 10:00:00 +00:00', 3, 3), -- Country movement.
+    ('SYN-MEMBER-001', 'Synthetic Tie Candidate A', 'USA', '2024-03-01 10:00:00 +00:00', 4, 4),
+    ('SYN-MEMBER-001', 'Synthetic Tie Candidate B', 'USA', '2024-03-01 10:00:00 +00:00', 5, 5), -- Explicit sequence tie-breaker.
+    (NULL, 'Missing Synthetic Identity', 'AUS', '2024-04-01 10:00:00 +00:00', 6, 6),
+    ('SYN-MEMBER-002', 'Missing Synthetic Order', 'IND', NULL, 1, 7);
+
+CREATE OR REPLACE TEMP TABLE SYNTHETIC_HELD_EVENTS AS
+SELECT * FROM SYNTHETIC_MEMBER_EVENTS
+WHERE GLOBAL_MEMBER_ID IS NULL OR SOURCE_UPDATED_AT_UTC IS NULL OR SOURCE_SEQUENCE IS NULL;
+
+CREATE OR REPLACE TEMP TABLE SYNTHETIC_WINNERS AS
+SELECT GLOBAL_MEMBER_ID, MEMBER_NAME, COUNTRY_CODE, SOURCE_UPDATED_AT_UTC, SOURCE_SEQUENCE
+FROM SYNTHETIC_MEMBER_EVENTS
+WHERE GLOBAL_MEMBER_ID IS NOT NULL
+  AND SOURCE_UPDATED_AT_UTC IS NOT NULL
+  AND SOURCE_SEQUENCE IS NOT NULL
+QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY GLOBAL_MEMBER_ID
+    ORDER BY SOURCE_UPDATED_AT_UTC DESC, SOURCE_SEQUENCE DESC
+) = 1;
+
+CREATE OR REPLACE TEMP TABLE SYNTHETIC_CURRENT_COUNTRY AS
+SELECT GLOBAL_MEMBER_ID, MEMBER_NAME, COUNTRY_CODE, SOURCE_UPDATED_AT_UTC, SOURCE_SEQUENCE
+FROM SYNTHETIC_WINNERS WHERE 1 = 0;
+
+-- Seed the previous published state to make the old-country removal visible.
+INSERT INTO SYNTHETIC_CURRENT_COUNTRY VALUES
+    ('SYN-MEMBER-001', 'Synthetic Member', 'AUS', '2024-01-01 10:00:00 +00:00', 1);
+
+BEGIN TRANSACTION;
+DELETE FROM SYNTHETIC_CURRENT_COUNTRY
+WHERE GLOBAL_MEMBER_ID IN (SELECT GLOBAL_MEMBER_ID FROM SYNTHETIC_WINNERS);
+INSERT INTO SYNTHETIC_CURRENT_COUNTRY
+SELECT GLOBAL_MEMBER_ID, MEMBER_NAME, COUNTRY_CODE, SOURCE_UPDATED_AT_UTC, SOURCE_SEQUENCE
+FROM SYNTHETIC_WINNERS;
+COMMIT;
+
+-- Expected: only the sequence-5 USA state remains; AUS was removed. The older
+-- late-arriving IND row loses because source business time, not arrival, orders it.
+SELECT * FROM SYNTHETIC_CURRENT_COUNTRY;
+SELECT
+    COALESCE(COUNT_IF(COUNTRY_CODE = 'AUS'), 0) = 0 AS OLD_COUNTRY_REMOVED,
+    COALESCE(COUNT_IF(COUNTRY_CODE = 'USA'), 0) = 1 AS MOVED_TO_NEW_COUNTRY,
+    MAX(SOURCE_SEQUENCE) = 5 AS SYNTHETIC_TIMESTAMP_TIE_BROKEN_BY_SEQUENCE,
+    (SELECT COUNT(*) FROM SYNTHETIC_HELD_EVENTS) = 2 AS MISSING_IDENTITY_OR_ORDER_HELD
+FROM SYNTHETIC_CURRENT_COUNTRY;
+
+-- This algorithm is valid only when production source owners confirm a stable
+-- global identity, an authoritative business-effective/update timestamp, and
+-- the sequence's ordering semantics. Conflicting rows tied on all approved
+-- ordering columns must be held for review, not ordered by ingestion time.

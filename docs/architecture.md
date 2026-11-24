@@ -49,7 +49,7 @@ Snowflake supports delimited text and JSON formats, but its listed load formats 
 
 The active inventory is exactly `AUS.xlsx`, `IND.csv`, and `USA.csv`. The two duplicate format variants have already been removed; do not add adapter aliases or load mappings for them. Keep original names and bytes unchanged. Local landing stores source file, optional sheet, data-row number, source code, content hash, schema fingerprint, raw row/value representation, and routing method. The PDF JSON remains under `tests/fixtures/` only if later needed for tests, clearly marked as illustrative.
 
-The PDF describes a production pipe-delimited member file with `H`/`D` records and a nested JSON redemption feed. Snowflake landing preserves the raw member record plus source metadata and stores redemption payloads as `VARIANT`. Retain unknown/extra source fields and a source-column-presence map so an absent field is distinguishable from a present field with a null marker.
+The PDF describes a production pipe-delimited member file with `H`/`D` records and a nested JSON redemption feed. Snowflake landing preserves the raw member record plus source metadata and stores redemption payloads as `VARIANT`. Retain unknown/extra source fields and a source-column-presence map so an absent field is distinguishable from a present field with a null marker. For the SQL loader, `SOURCE_CODE`/`SOURCE_FILENAME` must be the exact pairs `AUS`/`AUS.xlsx`, `IND`/`IND.csv`, and `USA`/`USA.csv`; the transformation does not accept other route aliases. Preserve workbook source values in `RAW_VALUES` and place ISO calendar-date strings for native XLSX date cells in the optional `NORMALIZED_VALUES` sidecar used for parsing.
 
 ### Proposed batch filename convention
 
@@ -102,11 +102,11 @@ For local routing, use explicit mappings `AUS.xlsx → AUS`, `IND.csv → IND`, 
 Required checks:
 
 - PDF-mandatory Member Name, Member ID, and Enrollment Date; Member ID maximum length 18, preserving textual form.
-- Member Name duplicate checks within the documented source-country dataset/batch key scope. Because the PDF declares Member Name as a key, quarantine every record in a duplicate group from curated output while preserving its raw row and provenance. A same-name row in another country dataset is not a conflict and must not be merged or quarantined. The PDF does not define key scope, so one source-country batch is the explicit local assumption pending confirmation.
+- Member Name duplicate checks within the documented source-country dataset/batch key scope. Because the PDF declares Member Name as a key, quarantine every record in a duplicate group from curated output while preserving its raw row and provenance. The Snowflake SQL checks `(run_id, batch_id, source_code)` across artifacts in that batch, matching its target uniqueness declaration. A same-name row in another country dataset is not a conflict and must not be merged or quarantined. The PDF does not define key scope, so one source-country batch is the explicit local assumption pending confirmation.
 - Source-local ID duplicates within each source batch are warnings only because Member ID is not declared a key; repeated values across sources are expected in the sample and do not imply identity.
 - Validate calendar dates using an explicit `as_of_date`, never the system clock: future DOB is quarantined; future enrollment/flight dates are warnings pending source-owner confirmation. Missing/invalid optional DOB or flight yields null derived values with a visible issue.
 - Tier, active, state, country, postcode, transaction, and referential checks. `PLT`, `GLD`, `SLV`, and `A` are observed values, not a complete allowed-code list. The PDF specifies Post Code as integer length 5, but no active source has it; preserve lexical form before conversion to avoid losing leading zeroes.
-- Redemption structure/field presence, transaction date, ID duplicates, status, miles, parent IDs, and unmatched references. The JSON sample shows `COMPLETED` and `PENDING`, not a full status domain. Flag negative/zero miles pending reversal/zero-value rules.
+- Redemption structure/field presence, transaction date, ID duplicates, status, miles, parent IDs, and unmatched references. The JSON sample shows `COMPLETED` and `PENDING`, not a full status domain. Flag negative/zero miles pending reversal/zero-value rules. Snowflake SQL uses a documented `(run_id, batch_id)` duplicate-ID validation scope across artifacts in one batch; it makes no uniqueness claim across batches.
 
 Classify data as valid, warning, or quarantined. Quarantine malformed records and invalid mandatory fields with raw record, provenance, rule code, and detail retained. Optional-field errors remain visible with null parsed values when safe to process. Every batch reconciles source row counts with curated, warning, and quarantined counts; warning counts are reported separately if they overlap dispositions. No source row silently disappears.
 
@@ -148,14 +148,17 @@ Use bulk `COPY INTO`, source/feed/date-organized cloud-storage paths, set-based 
 
 Start with Snowflake micro-partitioning. Add a clustering key only when representative query profiles show a worthwhile benefit; clustering has maintenance cost. [Snowflake table design guidance](https://docs.snowflake.com/en/user-guide/table-considerations) No benchmark or throughput claim is made from this local sample.
 
-## 12. Planned Snowflake SQL artifacts
+## 12. Snowflake SQL artifacts
 
-- `sql/001_raw_landing.sql`: raw member and redemption landing plus file/batch metadata.
-- `sql/002_staging.sql`: typed staging and quality/audit structures.
-- `sql/003_country_targets.sql`: physical target tables for explicitly configured codes.
-- `sql/004_transform_members.sql`: validation, derived fields, deduplication prerequisites, and country DML.
-- `sql/005_transform_redemptions.sql`: VARIANT flattening, validation, and join strategy.
-- `sql/006_data_quality.sql`: issue/quarantine tables and reconciliation queries.
+- `sql/01_raw_ddl.sql`: raw member/redemption landing, artifact/run metadata, and reconciliation DDL.
+- `sql/02_staging_ddl.sql`: assessment-typed member staging, redemption staging, and quality issue DDL.
+- `sql/03_member_transformations.sql`: source normalization, date validation, Age/Stale_Member, and member issues.
+- `sql/04_redemption_flattening.sql`: raw JSON validation, `VARIANT`/`FLATTEN` transaction output, and unmatched-reference issues.
+- `sql/05_country_targets.sql`: physical AUS/IND/USA country targets and per-run sample publication.
+- `sql/06_validation_and_reconciliation.sql`: review queries and persisted-row reconciliation.
+- `sql/07_latest_record_wins_synthetic_demo.sql`: isolated synthetic identity, movement, late-arrival, and timestamp-tie scenario.
+- `sql/08_review_regression_scenarios.sql`: synthetic parent-retention/quarantine, compact-date, and name/transaction duplicate-scope regression queries.
+- `sql/README.md`: prerequisites, raw-loader contract, execution order, and limitations.
 
 No Snowflake database, account, role, or deployment infrastructure is introduced by this design. SQL execution evidence requires an approved Snowflake environment; local DuckDB results are not proof of Snowflake dialect execution.
 
